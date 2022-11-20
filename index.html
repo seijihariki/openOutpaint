@@ -67,8 +67,6 @@
             <input type="checkbox" id="cbxSnap" onchange="changeSnapMode()" checked="checked"><br />
             <label for="cbxPaint">Mask mode?</label>
             <input type="checkbox" id="cbxPaint" onchange="changePaintMode()"><br />
-            <label for="cbxErase"><s>Erase mask?</s></label>
-            <input type="checkbox" id="cbxErase" onchange="changeEraseMode()" disabled="disabled"><br />
             <label for="cbxHRFix">Auto txt2img HRfix?</label>
             <input type="checkbox" id="cbxHRFix" onchange="changeHiResFix()"><br />
             <label for="cbxOverMask">Overmasking?</label>
@@ -115,7 +113,7 @@
     </div>
     <div id="mainHSplit" class="mainHSplit">
         <div id="uiWrapper" class="uiWrapper">
-            <div id="canvasHolder" class="canvasHolder" oncontextmenu="return false;">
+            <div id="canvasHolder" class="canvasHolder" oncontextmenu="return false;" onau="return false;">
                 <canvas id="backgroundCanvas" class="mainCanvases backgroundCanvas" width="2560" height="1440"
                     style="z-index: 0;">
                     <!-- gray grid bg canvas -->

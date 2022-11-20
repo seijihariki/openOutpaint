@@ -86,21 +86,29 @@ var url = "/sdapi/v1/";
 var endpoint = "txt2img"
 var frameX = 512;
 var frameY = 512;
-var prevMouseX = 0;
-var prevMouseY = 0;
-var mouseX = 0;
-var mouseY = 0;
 var canvasX = 0;
 var canvasY = 0;
 var snapX = 0;
 var snapY = 0;
 var drawThis = {};
-var clicked = false;
+var mouse = {
+    prev: {
+        x: 0,
+        y: 0
+    },
+    pos: {
+        x: 0,
+        y: 0
+    },
+
+    left: false,
+    right: false,
+    middle: false
+}
 const basePixelCount = 64; //64 px - ALWAYS 64 PX
 var scaleFactor = 8; //x64 px
 var snapToGrid = true;
 var paintMode = false;
-var eraseMode = false; //TODO this is broken, functionality still exists in code but UI element is just naively disabled
 var backupMaskPaintCanvas; //???
 var backupMaskPaintCtx;  //...? look i am bad at this
 var backupMaskChunk = null;
@@ -146,7 +154,6 @@ function startup() {
     drawBackground();
     changeScaleFactor();
     changePaintMode();
-    changeEraseMode();
     changeSampler();
     changeSteps();
     changeCfgScale();
@@ -364,10 +371,11 @@ function mouseMove(evt) {
     const rect = ovCanvas.getBoundingClientRect() // not-quite pixel offset was driving me insane
     const canvasOffsetX = rect.left;
     const canvasOffsetY = rect.top;
-    mouseXInfo.innerText = mouseX = evt.clientX;
-    mouseYInfo.innerText = mouseY = evt.clientY;
-    canvasXInfo.innerText = canvasX = parseInt(evt.clientX - rect.left);
-    canvasYInfo.innerText = canvasY = parseInt(evt.clientY - rect.top);
+    // Calculate Mouse location
+    mouseXInfo.innerText = mouse.pos.x = evt.clientX;
+    mouseYInfo.innerText = mouse.pos.y = evt.clientY;
+    canvasXInfo.innerText = canvasX = Math.floor(evt.clientX - rect.left);
+    canvasYInfo.innerText = canvasY = Math.floor(evt.clientY - rect.top);
     snapXInfo.innerText = canvasX + snap(canvasX);
     snapYInfo.innerText = canvasY + snap(canvasY);
     ovCtx.clearRect(0, 0, ovCanvas.width, ovCanvas.height); // clear out the previous mouse cursor 
@@ -393,37 +401,47 @@ function mouseMove(evt) {
         }
         finalX = snapOffsetX + canvasX;
         finalY = snapOffsetY + canvasY;
-        ovCtx.strokeRect(parseInt(finalX - ((basePixelCount * scaleFactor) / 2)), parseInt(finalY - ((basePixelCount * scaleFactor) / 2)), basePixelCount * scaleFactor, basePixelCount * scaleFactor); //origin is middle of the frame
+        ovCtx.strokeRect(
+            Math.floor(finalX - ((basePixelCount * scaleFactor) / 2)),
+            Math.floor(finalY - ((basePixelCount * scaleFactor) / 2)),
+            basePixelCount * scaleFactor,
+            basePixelCount * scaleFactor); //origin is middle of the frame
     } else {
         // draw big translucent red blob cursor
         ovCtx.beginPath();
         ovCtx.arc(canvasX, canvasY, 4 * scaleFactor, 0, 2 * Math.PI, true); // for some reason 4x on an arc is === to 8x on a line???
         ovCtx.fillStyle = "#FF6A6A50";
         ovCtx.fill();
-        // in case i'm trying to draw
-        mouseX = parseInt(evt.clientX - canvasOffsetX);
-        mouseY = parseInt(evt.clientY - canvasOffsetY);
-        if (clicked) {
-            // i'm trying to draw, please draw :(             
-            if (eraseMode) {
-                // THIS IS SOOOO BROKEN AND I DON'T UNDERSTAND WHY BECAUSE I AM THE BIG DUMB
-                maskPaintCtx.globalCompositeOperation = 'destination-out';
-                // maskPaintCtx.strokeStyle = "#FFFFFF00";
-            } else {
-                maskPaintCtx.globalCompositeOperation = 'source-over';
-                maskPaintCtx.strokeStyle = "#FF6A6A10";
-            }
 
-            maskPaintCtx.lineWidth = 8 * scaleFactor;
+        maskPaintCtx.lineWidth = 8 * scaleFactor;
+
+        if (mouse.left) {
+            // Drawing with left mouse button
+            // i'm trying to draw, please draw :(
+            maskPaintCtx.globalCompositeOperation = 'source-over';
+            maskPaintCtx.strokeStyle = "#FF6A6A";
+
             maskPaintCtx.beginPath();
-            maskPaintCtx.moveTo(prevMouseX, prevMouseY);
-            maskPaintCtx.lineTo(mouseX, mouseY);
+            maskPaintCtx.moveTo(Math.floor(mouse.prev.x), Math.floor(mouse.prev.y));
+            maskPaintCtx.lineTo(Math.floor(mouse.pos.x), Math.floor(mouse.pos.y));
+            maskPaintCtx.lineJoin = maskPaintCtx.lineCap = 'round';
+            maskPaintCtx.stroke();
+        } else if (mouse.right) {
+            // Erasing with right mouse button
+            maskPaintCtx.globalCompositeOperation = 'destination-out';
+            maskPaintCtx.strokeStyle = "#FFFFFF";
+
+            maskPaintCtx.beginPath();
+            maskPaintCtx.moveTo(Math.floor(mouse.prev.x), Math.floor(mouse.prev.y));
+            maskPaintCtx.lineTo(Math.floor(mouse.pos.x), Math.floor(mouse.pos.y));
             maskPaintCtx.lineJoin = maskPaintCtx.lineCap = 'round';
             maskPaintCtx.stroke();
         }
-        prevMouseX = mouseX;
-        prevMouseY = mouseY;
     }
+
+    // Previous mouse location
+    mouse.prev.x = mouse.pos.x;
+    mouse.prev.y = mouse.pos.y;
 }
 
 function mouseDown(evt) {
@@ -433,6 +451,8 @@ function mouseDown(evt) {
         oddOffset = basePixelCount / 2;
     }
     if (evt.button == 0) { // left click
+        mouse.left = true;
+
         if (placingArbitraryImage) {
             var nextBox = {};
             nextBox.x = evt.offsetX;
@@ -440,14 +460,7 @@ function mouseDown(evt) {
             nextBox.w = arbitraryImageData.width;
             nextBox.h = arbitraryImageData.height;
             dropTargets.push(nextBox);
-        } else if (paintMode) {
-            //const rect = ovCanvas.getBoundingClientRect() // not-quite pixel offset was driving me insane
-            const canvasOffsetX = rect.left;
-            const canvasOffsetY = rect.top;
-            prevMouseX = mouseX = evt.clientX - canvasOffsetX;
-            prevMouseY = mouseY = evt.clientY - canvasOffsetY;
-            clicked = true;
-        } else {
+        } else if (!paintMode) {
             //const rect = ovCanvas.getBoundingClientRect()
             var nextBox = {};
             nextBox.x = evt.clientX - ((basePixelCount * scaleFactor) / 2) - rect.left + oddOffset; //origin is middle of the frame 
@@ -456,19 +469,24 @@ function mouseDown(evt) {
             nextBox.h = basePixelCount * scaleFactor;
             drawTargets.push(nextBox);
         }
-    } else if (evt.button == 2 && !paintMode) { // right click, also gotta make sure mask blob isn't being used as it's visually inconsistent with behavior of erased region
-        // erase the canvas underneath the cursor, 
-        ctx = imgCanvas.getContext('2d');
-        if (snapToGrid) {
-            ctx.clearRect(canvasX + snap(canvasX) - ((basePixelCount * scaleFactor) / 2), canvasY + snap(canvasY) - ((basePixelCount * scaleFactor) / 2), basePixelCount * scaleFactor, basePixelCount * scaleFactor);
-        } else {
-            ctx.clearRect(canvasX - ((basePixelCount * scaleFactor) / 2), canvasY - ((basePixelCount * scaleFactor) / 2), basePixelCount * scaleFactor, basePixelCount * scaleFactor);
+    } else if (evt.button == 2) { // right click, also gotta make sure mask blob isn't being used as it's visually inconsistent with behavior of erased region
+        mouse.right = true;
+
+        if (!paintMode) {
+            // erase the canvas underneath the cursor,
+            ctx = imgCanvas.getContext('2d');
+            if (snapToGrid) {
+                ctx.clearRect(canvasX + snap(canvasX) - ((basePixelCount * scaleFactor) / 2), canvasY + snap(canvasY) - ((basePixelCount * scaleFactor) / 2), basePixelCount * scaleFactor, basePixelCount * scaleFactor);
+            } else {
+                ctx.clearRect(canvasX - ((basePixelCount * scaleFactor) / 2), canvasY - ((basePixelCount * scaleFactor) / 2), basePixelCount * scaleFactor, basePixelCount * scaleFactor);
+            }
         }
     }
 }
 
 function mouseUp(evt) {
     if (evt.button == 0) { // left click
+        mouse.left = false;
         if (placingArbitraryImage) {
             // jeez i REALLY need to refactor tons of this to not be duplicated all over, that's definitely my next chore after figuring out that razza frazza overmask fade
             var target = dropTargets[dropTargets.length - 1]; //get the last one... why am i storing all of them?
@@ -487,10 +505,7 @@ function mouseUp(evt) {
             drawThis.h = target.h;
             drawIt = drawThis; // i still think this is really stupid and redundant and unnecessary and redundant
             drop(drawIt);
-        } else if (paintMode) {
-            clicked = false;
-            return;
-        } else {
+        } else if (!paintMode) {
             if (!blockNewImages) {
                 //TODO seriously, refactor this
                 blockNewImages = true;
@@ -732,6 +747,8 @@ function mouseUp(evt) {
                 dream(drawIt.x, drawIt.y, stableDiffusionData);
             }
         }
+    } else if (evt.button == 2) {
+        mouse.right = false;
     }
 }
 
@@ -740,12 +757,6 @@ const changeSteps = sliderChangeHandlerFactory("steps", "stepsTxt", "steps", 30)
 
 function changePaintMode() {
     paintMode = document.getElementById("cbxPaint").checked;
-    clearTargetMask();
-    ovCtx.clearRect(0, 0, ovCanvas.width, ovCanvas.height);
-}
-
-function changeEraseMode() {
-    eraseMode = document.getElementById("cbxErase").checked;
     clearTargetMask();
     ovCtx.clearRect(0, 0, ovCanvas.width, ovCanvas.height);
 }
