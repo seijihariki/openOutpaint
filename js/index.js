@@ -193,7 +193,8 @@ function writeArbitraryImage(img, x, y) {
 	document.getElementById("preloadImage").files = null;
 }
 
-function dream(x, y, prompt) {
+function dream(x, y, prompt, method = "txt2img") {
+	endpoint = method;
 	tmpImgXYWH.x = x;
 	tmpImgXYWH.y = y;
 	tmpImgXYWH.w = prompt.width;
@@ -201,13 +202,18 @@ function dream(x, y, prompt) {
 	console.log(
 		"dreaming to " + host + url + endpoint + ":\r\n" + JSON.stringify(prompt)
 	);
-	postData(prompt).then((data) => {
-		returnedImages = data.images;
-		totalImagesReturned = data.images.length;
-		blockNewImages = true;
-		//console.log(data); // JSON data parsed by `data.json()` call
-		imageAcceptReject(x, y, data);
-	});
+	console.debug(prompt);
+	postData(prompt)
+		.then((data) => {
+			returnedImages = data.images;
+			totalImagesReturned = data.images.length;
+			blockNewImages = true;
+			//console.log(data); // JSON data parsed by `data.json()` call
+			imageAcceptReject(x, y, data);
+		})
+		.catch(() => {
+			blockNewImages = false;
+		});
 }
 
 async function postData(promptData) {
@@ -384,23 +390,23 @@ function snap(i, scaled = true) {
 	return -snapOffset;
 }
 
-function march() {
+function drawMarchingAnts(x, y, w, h) {
+	clearTargetMask();
+	tgtCtx.strokeStyle = "#333333FF"; //"#55000077";
+	tgtCtx.setLineDash([4, 2]);
+	tgtCtx.lineDashOffset = -marchOffset;
+	tgtCtx.strokeRect(x, y, w, h);
+}
+
+function march(x, y, w, h) {
 	if (marching) {
 		marchOffset++;
 		if (marchOffset > 16) {
 			marchOffset = 0;
 		}
-		drawMarchingAnts();
-		setTimeout(march, 20);
+		drawMarchingAnts(x, y, w, h);
+		setTimeout(() => march(x, y, w, h), 20);
 	}
-}
-
-function drawMarchingAnts() {
-	clearTargetMask();
-	tgtCtx.strokeStyle = "#333333FF"; //"#55000077";
-	tgtCtx.setLineDash([4, 2]);
-	tgtCtx.lineDashOffset = -marchOffset;
-	tgtCtx.strokeRect(marchCoords.x, marchCoords.y, marchCoords.w, marchCoords.h);
 }
 
 function mouseMove(evt) {
@@ -427,23 +433,6 @@ function mouseMove(evt) {
 		finalX = snapOffsetX + canvasX;
 		finalY = snapOffsetY + canvasY;
 		ovCtx.drawImage(arbitraryImage, finalX, finalY);
-	} else if (!paintMode) {
-		// draw targeting square reticle thingy cursor
-		ovCtx.strokeStyle = "#00000077";
-		snapOffsetX = 0;
-		snapOffsetY = 0;
-		if (snapToGrid) {
-			snapOffsetX = snap(canvasX);
-			snapOffsetY = snap(canvasY);
-		}
-		finalX = snapOffsetX + canvasX;
-		finalY = snapOffsetY + canvasY;
-		ovCtx.strokeRect(
-			parseInt(finalX - (basePixelCount * scaleFactor) / 2),
-			parseInt(finalY - (basePixelCount * scaleFactor) / 2),
-			basePixelCount * scaleFactor,
-			basePixelCount * scaleFactor
-		); //origin is middle of the frame
 	}
 }
 
@@ -487,6 +476,126 @@ mouse.listen.canvas.right.onpaint.on((evn) => {
 		maskPaintCtx.stroke();
 	}
 });
+
+/**
+ * Image generation implementation
+ */
+(() => {
+	// Scope
+	function getCenteredBoundingBox(cx, cy, w, h, gridSnap = false) {
+		const offset = {x: 0, y: 0};
+		const box = {x: 0, y: 0};
+
+		if (gridSnap) {
+			offset.x = snap(cx);
+			offset.y = snap(cy);
+		}
+		box.x = offset.x + cx;
+		box.y = offset.y + cy;
+
+		return {
+			x: Math.floor(box.x - w / 2),
+			y: Math.floor(box.y - h / 2),
+			w,
+			h,
+		};
+	}
+
+	mouse.listen.canvas.onmousemove.on((evn) => {
+		if (!paintMode && evn.target.id === "overlayCanvas") {
+			const bb = getCenteredBoundingBox(
+				evn.x,
+				evn.y,
+				basePixelCount * scaleFactor,
+				basePixelCount * scaleFactor,
+				snapToGrid
+			);
+
+			// draw targeting square reticle thingy cursor
+			ovCtx.strokeStyle = "#00000077";
+			ovCtx.strokeRect(bb.x, bb.y, bb.w, bb.h); //origin is middle of the frame
+		}
+	});
+
+	mouse.listen.canvas.left.onclick.on((evn) => {
+		if (!paintMode && evn.target.id === "overlayCanvas" && !blockNewImages) {
+			const bb = getCenteredBoundingBox(
+				evn.x,
+				evn.y,
+				basePixelCount * scaleFactor,
+				basePixelCount * scaleFactor,
+				snapToGrid
+			);
+
+			// Build request to the API
+			const request = {};
+			Object.assign(request, stableDiffusionData);
+
+			// Load prompt (maybe we should add some events so we don't have to do this)
+			request.prompt = document.getElementById("prompt").value;
+			request.negative_prompt = document.getElementById("negPrompt").value;
+
+			// Don't allow another image until is finished
+			blockNewImages = true;
+
+			// Setup marching ants (we could create an object for rendering these)
+			marching = true;
+			march(bb.x, bb.y, bb.w, bb.h);
+
+			// Setup some basic information for SD
+			request.width = bb.w;
+			request.height = bb.h;
+
+			request.firstphase_width = bb.w / 2;
+			request.firstphase_height = bb.h / 2;
+
+			// Use txt2img if canvas is blank
+			if (isCanvasBlank(bb.x, bb.y, bb.w, bb.h, imgCanvas)) {
+				// Dream
+				dream(bb.x, bb.y, request, "txt2img");
+			} else {
+				// Use img2img if not
+
+				// Temporary canvas for init image and mask generation
+				const auxCanvas = document.createElement("canvas");
+				auxCanvas.width = request.width;
+				auxCanvas.height = request.height;
+				const auxCtx = auxCanvas.getContext("2d");
+
+				auxCtx.fillStyle = "#000F";
+
+				// Get init image
+				auxCtx.fillRect(0, 0, bb.w, bb.h);
+				auxCtx.drawImage(imgCanvas, bb.x, bb.y, bb.w, bb.h, 0, 0, bb.w, bb.h);
+				request.init_images = [auxCanvas.toDataURL()];
+
+				// Get mask image
+				auxCtx.fillRect(0, 0, bb.w, bb.h);
+				auxCtx.globalCompositeOperation = "destination-in";
+				auxCtx.drawImage(imgCanvas, bb.x, bb.y, bb.w, bb.h, 0, 0, bb.w, bb.h);
+				auxCtx.globalCompositeOperation = "destination-out";
+				auxCtx.drawImage(
+					maskPaintCanvas,
+					bb.x,
+					bb.y,
+					bb.w,
+					bb.h,
+					0,
+					0,
+					bb.w,
+					bb.h
+				);
+				auxCtx.globalCompositeOperation = "destination-atop";
+				auxCtx.fillStyle = "#FFFF";
+				auxCtx.fillRect(0, 0, bb.w, bb.h);
+				request.mask = auxCanvas.toDataURL();
+
+				// Dream
+				dream(bb.x, bb.y, request, "img2img");
+			}
+		}
+	});
+})();
 
 function mouseDown(evt) {
 	const rect = ovCanvas.getBoundingClientRect();
@@ -565,6 +674,7 @@ function mouseUp(evt) {
 			clicked = false;
 			return;
 		} else {
+			return;
 			if (!blockNewImages) {
 				//TODO seriously, refactor this
 				blockNewImages = true;
@@ -743,6 +853,11 @@ function changeEnableErasing() {
 	localStorage.setItem("enable_erase", enableErasing);
 }
 
+function changeInsetImg2Img() {
+	insetImg2Img = document.getElementById("cbxInsetImg2Img").checked;
+	localStorage.setItem("inset_masking", insetImg2Img);
+}
+
 function changeSampler() {
 	stableDiffusionData.sampler_index =
 		document.getElementById("samplerSelect").value;
@@ -787,7 +902,9 @@ function changeSnapMode() {
 }
 
 function changeMaskBlur() {
-	stableDiffusionData.mask_blur = document.getElementById("maskBlur").value;
+	stableDiffusionData.mask_blur = parseInt(
+		document.getElementById("maskBlur").value
+	);
 	localStorage.setItem("mask_blur", stableDiffusionData.mask_blur);
 }
 
