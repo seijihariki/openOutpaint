@@ -212,12 +212,6 @@ commands.createCommand(
 			state.context = context;
 
 			// Saving what was in the canvas before the command
-			const imgData = context.getImageData(
-				options.x,
-				options.y,
-				options.w || options.image.width,
-				options.h || options.image.height
-			);
 			state.box = {
 				x: options.x,
 				y: options.y,
@@ -228,7 +222,19 @@ commands.createCommand(
 			const cutout = document.createElement("canvas");
 			cutout.width = state.box.w;
 			cutout.height = state.box.h;
-			cutout.getContext("2d").putImageData(imgData, 0, 0);
+			cutout
+				.getContext("2d")
+				.drawImage(
+					context.canvas,
+					options.x,
+					options.y,
+					options.w,
+					options.h,
+					0,
+					0,
+					options.w,
+					options.h
+				);
 			state.original = new Image();
 			state.original.src = cutout.toDataURL();
 		}
