@@ -31,6 +31,10 @@ const uil = {
 		return this.layer && this.active.layer.ctx;
 	},
 
+	get rootctx() {
+		return this.layer && this.active.layer.rootctx;
+	},
+
 	get w() {
 		return imageCollection.size.w;
 	},

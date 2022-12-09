@@ -42,6 +42,7 @@ maskPaintCanvas.classList.add("mask-canvas");
 
 const ovCanvas = ovLayer.canvas; // where mouse cursor renders
 const ovCtx = ovLayer.ctx;
+const ovRootCtx = ovLayer.rootctx;
 
 const debugCanvas = debugLayer.canvas; // where mouse cursor renders
 const debugCtx = debugLayer.ctx;
@@ -81,8 +82,8 @@ mouse.registerContext(
 		const y = evn.clientY;
 
 		// Map to layer space
-		const layerX = ((x - bb.left) / bb.width) * w;
-		const layerY = ((y - bb.top) / bb.height) * h;
+		const layerX = ((x - bb.left) / bb.width) * w - imageCollection.origin.x;
+		const layerY = ((y - bb.top) / bb.height) * h - imageCollection.origin.y;
 
 		//
 		ctx.coords.pos.x = Math.round(layerX);

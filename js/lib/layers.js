@@ -29,7 +29,7 @@ const layers = {
 			},
 
 			// Input multiplier (Size of the input element div)
-			inputSizeMultiplier: 3,
+			inputSizeMultiplier: 999, // It is invisible, so not much of a performance difference
 
 			// Target
 			targetElement: document.getElementById("layer-render"),
@@ -76,27 +76,77 @@ const layers = {
 				name: options.name,
 				element,
 				inputElement: inputel,
+
 				_inputOffset: null,
 				get inputOffset() {
 					return this._inputOffset;
 				},
 
+				_origin: {x: 0, y: 0},
+				get origin() {
+					return Object.assign({}, this._origin);
+				},
+
 				_resizeInputDiv() {
 					// Set offset
 					this._inputOffset = {
-						x: -Math.floor(options.inputSizeMultiplier / 2) * size.w,
-						y: -Math.floor(options.inputSizeMultiplier / 2) * size.h,
+						x: -Math.floor(options.inputSizeMultiplier / 2) * this.size.w,
+						y: -Math.floor(options.inputSizeMultiplier / 2) * this.size.h,
 					};
 
 					// Resize the input element
 					this.inputElement.style.left = `${this.inputOffset.x}px`;
 					this.inputElement.style.top = `${this.inputOffset.y}px`;
 					this.inputElement.style.width = `${
-						size.w * options.inputSizeMultiplier
+						this.size.w * options.inputSizeMultiplier
 					}px`;
 					this.inputElement.style.height = `${
-						size.h * options.inputSizeMultiplier
+						this.size.h * options.inputSizeMultiplier
 					}px`;
+				},
+
+				/**
+				 * Expands collection and full layers contained
+				 *
+				 * @param {number} left Pixels to expand left
+				 * @param {number} right Pixels to expand right
+				 * @param {number} top Pixels to expand top
+				 * @param {number} bottom Pixels to expand bottom
+				 */
+				expand(left, right, top, bottom) {
+					// Create layer backup canvas
+					const bkp = document.createElement("canvas");
+					bkp.width = this.size.w;
+					bkp.height = this.size.h;
+					const bkpctx = bkp.getContext("2d");
+
+					// Expand base collection size
+					this.size.w += left + right;
+					this.size.h += top + bottom;
+					this._origin.x += left;
+					this._origin.y += top;
+					this.element.style.width = this.size.w + "px";
+					this.element.style.height = this.size.h + "px";
+
+					// Expand full layers, one by one
+					this._layers.forEach((layer) => {
+						// Only resize full layers
+						if (!layer.full) return;
+
+						// Backup the layer contents
+						bkpctx.clearRect(0, 0, bkp.width, bkp.height);
+						bkpctx.drawImage(layer.canvas, 0, 0);
+
+						// Resize the layer in place
+						const {cw, ch} = layer.resize(this.size.w, this.size.h);
+						layer.ctx.clearRect(0, 0, cw, ch);
+
+						// Apply translation here, for global origin transform
+						layer.ctx.translate(left, top);
+						layer.ctx.drawImage(bkp, 0, 0);
+					});
+
+					this._resizeInputDiv();
 				},
 
 				size,
@@ -137,7 +187,19 @@ const layers = {
 
 						// Context creation options
 						ctxOptions: {},
+
+						// Full Layer (If the layer is supposed to be the full size of the collection)
+						full: true,
 					});
+
+					// Cannot be full if bb is not default
+					if (
+						options.bb.x !== 0 ||
+						options.bb.y !== 0 ||
+						options.bb.w !== collection.size.w ||
+						options.bb.h !== collection.size.h
+					)
+						options.full = false;
 
 					// Calculate resolution
 					if (!options.resolution)
@@ -167,6 +229,7 @@ const layers = {
 					}
 
 					const ctx = canvas.getContext("2d", options.ctxOptions);
+					const rootctx = canvas.getContext("2d", options.ctxOptions);
 
 					// Path used for logging purposes
 					const _layerlogpath = key
@@ -180,6 +243,11 @@ const layers = {
 							id,
 							key,
 							name: options.name,
+
+							_full: options.full,
+							get full() {
+								return this._full;
+							},
 
 							state: new Proxy(
 								{visible: true},
@@ -198,6 +266,7 @@ const layers = {
 							/** Our canvas */
 							canvas,
 							ctx,
+							rootctx,
 
 							/**
 							 * Moves this layer to another level (after given layer)
@@ -243,6 +312,8 @@ const layers = {
 								);
 								canvas.style.width = `${w}px`;
 								canvas.style.height = `${h}px`;
+
+								return {cw: canvas.width, ch: canvas.height, w, h};
 							},
 
 							// Hides this layer (don't draw)

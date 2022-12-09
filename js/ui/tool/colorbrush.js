@@ -290,7 +290,10 @@ const colorBrushTool = () =>
 					const bb = cropped.bb;
 					commands.runCommand("drawImage", "Color Brush Draw", {
 						image: cropped.canvas,
-						...bb,
+						x: bb.x,
+						y: bb.y,
+						w: bb.w,
+						h: bb.h,
 					});
 
 					ctx.clearRect(bb.x, bb.y, bb.w, bb.h);
@@ -340,7 +343,10 @@ const colorBrushTool = () =>
 
 					commands.runCommand("eraseImage", "Color Brush Erase", {
 						mask: cropped.canvas,
-						...bb,
+						x: bb.x,
+						y: bb.y,
+						w: bb.w,
+						h: bb.h,
 					});
 
 					ctx.clearRect(bb.x, bb.y, bb.w, bb.h);

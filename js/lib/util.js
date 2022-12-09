@@ -200,10 +200,11 @@ class NoContentError extends Error {}
  * @param {HTMLCanvasElement} sourceCanvas Canvas to get a content crop from
  * @param {object} options Extra options
  * @param {number} [options.border=0] Extra border around the content
+ * @param {number} [options.origin=imageCollection.origin] Extra origin for translating resulting bounding box
  * @returns {{canvas: HTMLCanvasElement, bb: BoundingBox}} A new canvas with the cropped part of the image
  */
 function cropCanvas(sourceCanvas, options = {}) {
-	defaultOpt(options, {border: 0});
+	defaultOpt(options, {border: 0, origin: imageCollection.origin});
 
 	const w = sourceCanvas.width;
 	const h = sourceCanvas.height;
@@ -243,6 +244,10 @@ function cropCanvas(sourceCanvas, options = {}) {
 	cutCanvas
 		.getContext("2d")
 		.drawImage(sourceCanvas, bb.x, bb.y, bb.w, bb.h, 0, 0, bb.w, bb.h);
+
+	bb.x -= options.origin.x;
+	bb.y -= options.origin.y;
+
 	return {canvas: cutCanvas, bb};
 }
 
